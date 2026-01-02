@@ -11,7 +11,6 @@ from sklearn.linear_model import LogisticRegression
 # -------------------------------------------------------------
 @st.cache_resource
 def train_pipeline():
-    # The CSV must be in the repo root with this name
     df = pd.read_csv("healthcare-dataset-stroke-data.csv")
 
     # Basic cleaning
