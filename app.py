@@ -1,39 +1,72 @@
-# app.py
 import streamlit as st
 import pandas as pd
-import joblib
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
 
-# ---------------------------
-# Load trained pipeline
-# ---------------------------
+# -------------------------------------------------------------
+# Train pipeline ONCE and cache it (no .pkl, no joblib)
+# -------------------------------------------------------------
 @st.cache_resource
-def load_model():
-    return joblib.load("stroke_logreg_pipeline.pkl")  # or stroke_logreg_pipeline.pkl
+def train_pipeline():
+    # The CSV must be in the repo root with this name
+    df = pd.read_csv("healthcare-dataset-stroke-data.csv")
 
-pipe = load_model()
+    # Basic cleaning
+    df = df.copy()
+    df.drop(columns=["id"], inplace=True)
+    df["bmi"] = df["bmi"].fillna(df["bmi"].median())
 
-# ---------------------------
-# Page config
-# ---------------------------
+    X = df.drop("stroke", axis=1)
+    y = df["stroke"]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    numeric_features = ["age", "avg_glucose_level", "bmi"]
+    categorical_features = [c for c in X.columns if c not in numeric_features]
+
+    preprocess = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), numeric_features),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features),
+        ]
+    )
+
+    log_reg = LogisticRegression(
+        max_iter=1000,
+        class_weight="balanced",
+        solver="lbfgs",
+    )
+
+    pipe = Pipeline(steps=[("preprocess", preprocess), ("model", log_reg)])
+    pipe.fit(X_train, y_train)
+    return pipe
+
+
+pipe = train_pipeline()  # model is trained & cached here
+
+# -------------------------------------------------------------
+# Streamlit UI
+# -------------------------------------------------------------
 st.set_page_config(
     page_title="Stroke Risk Prediction",
     page_icon="🩺",
-    layout="centered"
+    layout="centered",
 )
 
 st.title("Stroke Risk Prediction App")
 st.write(
     "This app uses a Logistic Regression model trained on the "
     "[Stroke Prediction Dataset](https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset) "
-    "to estimate the risk of stroke.\n\n"
+    "to estimate stroke risk.\n\n"
     "**Important:** This is an educational demo and **not** medical advice."
 )
 
 st.markdown("---")
-
-# ---------------------------
-# Input form
-# ---------------------------
 st.header("Enter Patient Information")
 
 col1, col2 = st.columns(2)
@@ -48,45 +81,37 @@ with col1:
 with col2:
     work_type = st.selectbox(
         "Work type",
-        ["children", "Govt_job", "Never_worked", "Private", "Self-employed"]
+        ["children", "Govt_job", "Never_worked", "Private", "Self-employed"],
     )
     Residence_type = st.selectbox("Residence type", ["Urban", "Rural"])
     avg_glucose_level = st.number_input(
-        "Average glucose level",
-        min_value=0.0,
-        value=100.0,
-        step=0.1
+        "Average glucose level", min_value=0.0, value=100.0, step=0.1
     )
     bmi = st.number_input(
-        "Body Mass Index (BMI)",
-        min_value=0.0,
-        value=25.0,
-        step=0.1
+        "Body Mass Index (BMI)", min_value=0.0, value=25.0, step=0.1
     )
     smoking_status = st.selectbox(
         "Smoking status",
-        ["formerly smoked", "never smoked", "smokes", "Unknown"]
+        ["formerly smoked", "never smoked", "smokes", "Unknown"],
     )
 
-# Build input DataFrame with same columns as training
-input_df = pd.DataFrame({
-    "gender": [gender],
-    "age": [age],
-    "hypertension": [hypertension],
-    "heart_disease": [heart_disease],
-    "ever_married": [ever_married],
-    "work_type": [work_type],
-    "Residence_type": [Residence_type],
-    "avg_glucose_level": [avg_glucose_level],
-    "bmi": [bmi],
-    "smoking_status": [smoking_status]
-})
+input_df = pd.DataFrame(
+    {
+        "gender": [gender],
+        "age": [age],
+        "hypertension": [hypertension],
+        "heart_disease": [heart_disease],
+        "ever_married": [ever_married],
+        "work_type": [work_type],
+        "Residence_type": [Residence_type],
+        "avg_glucose_level": [avg_glucose_level],
+        "bmi": [bmi],
+        "smoking_status": [smoking_status],
+    }
+)
 
 st.markdown("---")
 
-# ---------------------------
-# Prediction
-# ---------------------------
 if st.button("Predict Stroke Risk"):
     proba = pipe.predict_proba(input_df)[0, 1]
     pred = pipe.predict(input_df)[0]
